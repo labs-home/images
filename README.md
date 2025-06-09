@@ -1,5 +1,5 @@
 <div align=center style="padding-bottom: 40px">
-    <img src="public/icon.png" height=250 />
+    <img src="public/banner.png" />
 </div>
 
 <h1 align=center>Container Images</h1>
