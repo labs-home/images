@@ -1,0 +1,79 @@
+name: Build Docker Images
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**/Dockerfile'
+      - '**/info.json'
+    branches:
+      - master
+
+jobs:
+  changed_files:
+    name: Detect Changed Files
+    runs-on: builder
+    outputs:
+      changed_directories: ${{ steps.set-output.outputs.changed_directories }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v46
+        with:
+          dir_names: true
+          json: true
+          quotepath: false
+          files: |
+            **/Dockerfile
+            **/info.json
+      
+      - name: Set output for changed directories
+        id: set-output
+        run: echo "changed_directories={\"dir\":${{ steps.changed-files.outputs.all_changed_files }}}" >> "$GITHUB_OUTPUT"
+
+  output:
+    name: Build Docker Images
+    runs-on: builder
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    if: ${{ needs.changed_files.outputs.changed_directories != '' }}
+    needs:
+      - changed_files
+    strategy:
+      matrix: ${{fromJson(needs.changed_files.outputs.changed_directories)}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Retrieve build version from info.json
+        id: get-version
+        run: |
+          if [ -f "${{ matrix.dir }}/info.json" ]; then
+            version=$(jq -r '.version' "${{ matrix.dir }}/info.json")
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          else
+            echo "No info.json found in ${{ matrix.dir }}"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.dir }}
+          file: ${{ matrix.dir }}/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ matrix.dir }}:${{ steps.get-version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ matrix.dir }}:latest

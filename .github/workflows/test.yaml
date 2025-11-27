@@ -1,0 +1,58 @@
+name: Test Build Docker Images
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - master
+    paths:
+      - '**/Dockerfile'
+      - '**/info.json'
+
+jobs:
+  changed_files:
+    name: Detect Changed Files
+    runs-on: builder
+    outputs:
+      changed_directories: ${{ steps.set-output.outputs.changed_directories }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v46
+        with:
+          dir_names: true
+          json: true
+          quotepath: false
+          files: |
+            **/Dockerfile
+            **/info.json
+      
+      - name: Set output for changed directories
+        id: set-output
+        run: echo "changed_directories={\"dir\":${{ steps.changed-files.outputs.all_changed_files }}}" >> "$GITHUB_OUTPUT"
+
+  output:
+    name: Build Docker Images
+    runs-on: builder
+    permissions:
+      contents: read
+    if: ${{ needs.changed_files.outputs.changed_directories != '' }}
+    needs:
+      - changed_files
+    strategy:
+      matrix: ${{fromJson(needs.changed_files.outputs.changed_directories)}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Docker Build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.dir }}
+          file: ${{ matrix.dir }}/Dockerfile
+          push: false
+          outputs: type=cacheonly
+          tags: ${{ matrix.dir }}:test
